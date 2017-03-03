@@ -6,7 +6,7 @@
 
 (named-readtables:in-readtable :qtools)
 
-(declaim (otpimize (speed 3) (safety 3) (size 0) (debug 3)))
+(declaim (optimize (speed 3) (safety 3) (size 0) (debug 3)))
 
 (defstruct square 
   (owner nil)
@@ -30,7 +30,7 @@
   (q+:accept ev))
 
 
-(define-menu (main-window File)
+(define-menu (main-window Game)
   (:separator)
   (:item ("Quit" (ctrl alt q))
          (q+:close main-window)))
@@ -67,13 +67,13 @@
       (q+:draw-line painter 0 0 width height))))
 
 
-(define-subwidget (main-window tsp-widget) (make-instance 'dab-drawer)
+(define-subwidget (main-window dab-widget) (make-instance 'dab-drawer)
   "The dab-drawer itself.")
 
 (define-initializer (main-window setup)
-  "Set the window title and set the fft-controls to be the central widget."
+  "Set the window title and set the dab-widget to be the central widget."
   (setf (q+:window-title main-window) "Dots And Boxes")
-  (setf (q+:central-widget main-window) tsp-widget))
+  (setf (q+:central-widget main-window) dab-widget))
 
 (defun main ()
   "Create the main window."
