@@ -4,5 +4,9 @@
 
 (defpackage #:dots-and-boxes
   (:use #:cl+qt)
-  (:export #:main))
+  (:export #:main
+           #:create-dots-and-boxes
+           #:dots-and-boxes-graph
+           #:count-complete-squares
+           #:add-edge))
 

@@ -8,27 +8,45 @@
 
 (declaim (optimize (speed 3) (safety 3) (size 0) (debug 3)))
 
-(defstruct square 
-  (owner nil)
-  (corners nil))
+(defstruct point
+  (x-loc 0 :type fixnum)
+  (y-loc 0 :type fixnum))
+
+
+(defstruct graph 
+  (points (make-array 0 :element-type 'point) :type (VECTOR point *))
+  (edges (make-array 0 :element-type 'list)  :type (VECTOR list *)))
+
+(defun create-dab-graph (size)
+  (let ((arr-size (* (+ size 1) (+ size 1))))
+    (make-graph :points (make-array arr-size :initial-contents (loop for i below arr-size
+                                                                  collect (make-point
+                                                                           :x-loc (mod i (1+ size))
+                                                                           :y-loc (/ (- i (mod i (1+ size))) (1+ size))))
+                                    :element-type 'point)
+                :edges (make-array arr-size :initial-element nil :element-type 'list))))
+
+(defun add-edge (graph v0 v1)
+  (with-slots (edges) graph
+    (push v1 (aref edges v0))
+    (push v0 (aref edges v1))))
+
+(defun count-complete-squares (graph)
+  0)
 
 (defstruct dots-and-boxes
-  (game-size 2)
-  (game-array (make-array (make-array 0 :element-type t :adjustable t :fill-pointer 0)))
-  (squares nil))
+  (game-size 2 :type fixnum)
+  (graph (create-dab-graph 2) :type graph))
 
 (defun create-dots-and-boxes (size)
   (make-dots-and-boxes :game-size size
-                            :game-array (make-array (* (1+ size) (1+ size)))))
+                       :graph (create-dab-graph size)))
 
-
-                            
 (define-widget main-window (QMainWindow)
   ())
 
 (define-override (main-window close-event) (ev)
   (q+:accept ev))
-
 
 (define-menu (main-window Game)
   (:separator)
@@ -40,7 +58,6 @@
          (q+:qmessagebox-information
           main-window "About"
           "Dots and Boxes.")))
-
 
 (define-widget dab-drawer (QWidget)
   ((dab-game :initform (create-dots-and-boxes 4)))
@@ -65,7 +82,6 @@
                    20 20
                    0 (* 16 360))
       (q+:draw-line painter 0 0 width height))))
-
 
 (define-subwidget (main-window dab-widget) (make-instance 'dab-drawer)
   "The dab-drawer itself.")
