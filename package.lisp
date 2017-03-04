@@ -12,5 +12,7 @@
            #:add-edge
            #:has-edge-p
            #:play-dab-game
-           #:create-two-player-dab))
+           #:create-two-player-dab
+           #:create-computer-human-dab
+           #:create-computer-computer-dab))
 

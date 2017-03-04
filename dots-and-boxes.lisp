@@ -118,10 +118,14 @@
                  (format t "The edge ~a ~a is not allowed, please try again!~%" v1 v2)))
              (format t "That edge has no available edges! Please pick another!~%")))))
 
-(defun get-computer-edge (graph)
+(defun get-random-computer-edge (graph)
   "Figure out a computer move."
   (declare (ignorable graph))
-  (values 1 2))
+  (loop for vert = (random (length (graph-edges graph))) then (random (length (graph-edges graph)))
+       for possibilities = (get-possibilities graph vert)
+     while (not possibilities)
+       finally (return-from get-random-computer-edge (values vert (nth (random (length possibilities)) possibilities)))))
+
 
 
 (defstruct player
@@ -136,20 +140,31 @@
   (game-size 2 :type fixnum)
   (num-squares 0 :type fixnum)
   (players (cons (make-player :edge-function #'get-human-edge :name "Human" :next-player #'cdr)
-                 (make-player :edge-function #'get-computer-edge :name "Computer" :next-player #'car)))
+                 (make-player :edge-function #'get-random-computer-edge :name "Computer" :next-player #'car)))
   (graph (create-dab-graph 2) :type graph))
 
-(defun create-dab (size)
-  "Construct a Dots and Boxes game object."
-  (make-dab :game-size size
-            :graph (create-dab-graph size)))
 
 (defun create-two-player-dab (size p1-name p2-name)
-  "Construct a Dots and Boxes game object."
+  "Construct a human vs human Dots and Boxes game."
   (make-dab :game-size size
             :graph (create-dab-graph size)
             :players (cons (make-player :edge-function #'get-human-edge :name p1-name :next-player #'cdr)
                            (make-player :edge-function #'get-human-edge :name p2-name :next-player #'car))))
+
+(defun create-computer-human-dab (size p-name)
+  "Create a human vs computer Dots and Boxes game."
+  (make-dab :game-size size
+            :graph (create-dab-graph size)
+            :players (cons (make-player :edge-function #'get-human-edge :name p-name :next-player #'cdr)
+                           (make-player :edge-function #'get-random-computer-edge :name "Computer" :next-player #'car))))
+
+(defun create-computer-computer-dab (size p1-name p2-name)
+  "Create a computer vs computer Dots and Boxes game."
+  (make-dab :game-size size
+            :graph (create-dab-graph size)
+            :players (cons (make-player :edge-function #'get-random-computer-edge :name p1-name :next-player #'cdr)
+                           (make-player :edge-function #'get-random-computer-edge :name p2-name :next-player #'car))))
+
 
 
 
