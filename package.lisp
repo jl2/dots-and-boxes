@@ -10,5 +10,7 @@
            #:count-complete-squares
            #:describe-graph
            #:add-edge
-           #:has-edge-p))
+           #:has-edge-p
+           #:play-dab-game
+           #:create-two-player-dab))
 

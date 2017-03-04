@@ -6,7 +6,7 @@
 
 (named-readtables:in-readtable :qtools)
 
-(declaim (optimize (speed 3) (safety 3) (size 0) (debug 3)))
+(declaim (optimize (speed 0) (safety 3) (size 0) (debug 3)))
 
 (defstruct point
   "A two dimensional point object."
@@ -43,27 +43,55 @@
   (with-slots (edges) graph
     (find v1 (aref edges v0))))
 
-(defun square-vertices-at (size i j)
+(defun game-size+1 (graph)
+  "Compute the game size + 1 (the number of vertices across)."
+  (isqrt (1+ (length (graph-edges graph)))))
+
+(defun square-vertices-at (graph i j)
   "Return the vertices for the square at position i j."
-  (let* ((v1 (+ i (* j size)))
-         (v2 (1+ v1))
-         (v3 (+ 1 size v1))
+  (verts-for-square graph (+ i (* j (game-size+1 graph)))))
+
+(defun verts-for-square (graph v1)
+  "The vertices that make up the square who's upper left corner is vertex v."
+  (let* ((v2 (1+ v1))
+         (v3 (+ (game-size+1 graph) v1))
          (v4 (1+ v3)))
     (values v1 v2 v3 v4)))
 
 (defun count-complete-squares (graph)
   "Count the number of 'complete' squares in the graph."
   (let ((s-count 0)
-        (size (1- (isqrt (1+ (length (graph-edges graph)))))))
+        (size (1- (game-size+1 graph))))
     (dotimes (j size)
       (dotimes (i size)
-        (multiple-value-bind (v1 v2 v3 v4) (square-vertices-at size i j)
+        (multiple-value-bind (v1 v2 v3 v4) (square-vertices-at graph i j)
           (when (and (has-edge-p graph v1 v2)
                      (has-edge-p graph v1 v3)
                      (has-edge-p graph v2 v4)
                      (has-edge-p graph v3 v4))
             (incf s-count)))))
     s-count))
+
+(defun get-possibilities (graph vertex)
+  "Return the list of possible moves available for the specified vertex."
+  (let* ((possibilities nil)
+         (size+1 (game-size+1 graph))
+         (j (mod vertex size+1))
+         (i (/ (- vertex j) size+1)))
+
+    (when (and (< i (1- size+1)) (not (has-edge-p graph vertex (+ size+1 vertex))))
+      (push (+ size+1 vertex) possibilities))
+
+    (when (and (< j (1- size+1)) (not (has-edge-p graph vertex (1+ vertex))))
+      (push (1+ vertex) possibilities))
+
+    (when (and (> j 0) (not (has-edge-p graph vertex (1- vertex))))
+      (push (1- vertex) possibilities))
+
+    (when (and (> i 0) (not (has-edge-p graph vertex (- vertex size+1))))
+      (push (- vertex size+1) possibilities))
+
+    possibilities))
 
 (defun describe-graph (graph &optional (stream t))
   "Write an easy to read description of graph to the specified stream."
@@ -72,20 +100,111 @@
       (dolist (gt (aref edges i))
         (when (< i gt) (format stream "~a - ~a~%" i gt))))))
 
+
+(defun get-human-edge (graph)
+  "Read the player's edge value from the keyboard."
+  (declare (ignorable graph))
+  (loop
+     do
+       (format t "Enter your first vertex: ")
+       (let* ((v1 (read))
+              (others (get-possibilities graph v1)))
+         (if others
+             (progn
+               (format t "Enter second vertex (~{~a~^ ~}): " others)
+               (let ((v2 (read)))
+                 (when (and (find v2 others) (not (has-edge-p graph v1 v2)))
+                   (return-from get-human-edge (values v1 v2)))
+                 (format t "The edge ~a ~a is not allowed, please try again!~%" v1 v2)))
+             (format t "That edge has no available edges! Please pick another!~%")))))
+
+(defun get-computer-edge (graph)
+  "Figure out a computer move."
+  (declare (ignorable graph))
+  (values 1 2))
+
+
+(defstruct player
+  "A player object containing a score, a function for getting an edge, a name, and a function to determine the next player."
+  (score 0 :type fixnum)
+  (edge-function #'get-human-edge)
+  (name "human" :type string)
+  (next-player #'cdr))
+
 (defstruct dab
   "A structure representing a Dots and Boxes game."
   (game-size 2 :type fixnum)
   (num-squares 0 :type fixnum)
-  (human-score 0 :type fixnum)
-  (comp-score 0 :type fixnum)
-  (whose-turn :human)
+  (players (cons (make-player :edge-function #'get-human-edge :name "Human" :next-player #'cdr)
+                 (make-player :edge-function #'get-computer-edge :name "Computer" :next-player #'car)))
   (graph (create-dab-graph 2) :type graph))
 
 (defun create-dab (size)
   "Construct a Dots and Boxes game object."
   (make-dab :game-size size
-                       :graph (create-dab-graph size)))
+            :graph (create-dab-graph size)))
 
+(defun create-two-player-dab (size p1-name p2-name)
+  "Construct a Dots and Boxes game object."
+  (make-dab :game-size size
+            :graph (create-dab-graph size)
+            :players (cons (make-player :edge-function #'get-human-edge :name p1-name :next-player #'cdr)
+                           (make-player :edge-function #'get-human-edge :name p2-name :next-player #'car))))
+
+
+
+(defun show-square-graph (graph)
+  "Display a square graph."
+  (let ((size+1 (game-size+1 graph)))
+    (dotimes (j size+1)
+      (dotimes (i size+1)
+        (multiple-value-bind (v1 v2 v3 v4) (square-vertices-at graph i j)
+          (declare (ignorable v3 v4))
+          (if (has-edge-p graph v1 v2)
+              (format t "~2d---" v1)
+              (format t "~2d   " v1))))
+      (terpri)
+      (dotimes (i size+1)
+        (multiple-value-bind (v1 v2 v3 v4) (square-vertices-at graph i j)
+          (declare (ignorable v3 v4))
+          (if (has-edge-p graph v1 v3)
+              (format t " |   ")
+              (format t "     "))))
+      (terpri))))
+
+
+(defun play-dab-game (dab)
+  "Play a game of Dots and Boxes against the computer."
+  (with-slots (game-size num-squares players graph) dab
+    (let ((cur-player (car players)))
+      (loop until (= num-squares (* game-size game-size))
+         do
+           (with-slots (name score edge-function next-player) cur-player
+             (format t "~%~a: ~a |  ~a: ~a~%"
+                     (player-name (car players))
+                     (player-score (car players))
+                     (player-name (cdr players))
+                     (player-score (cdr players)))
+             (format t "================================~%")
+             (show-square-graph graph)
+             (format t "================================~%")
+             (format t "It's ~a's turn!~%" name)
+             (multiple-value-bind (v1 v2) (funcall edge-function graph)
+               (add-edge graph v1 v2)
+               (let ((new-squares (count-complete-squares graph)))
+                 (if (> new-squares num-squares)
+                     (incf score (- new-squares num-squares))
+                     (setf cur-player (funcall next-player players)))
+                 (setf num-squares new-squares))))))
+      (let ((winner (if (> (player-score (car players)) (player-score (cdr players)))
+                        (car players)
+                        (cdr players))))
+        (terpri)
+        (show-square-graph graph)
+        (format t "Game over!~% The score was ~a to ~a~%The winner is ~a~%~%"
+                (player-score (car players))
+                (player-score (cdr players))
+                (player-name winner)))))
 
 
 ;; And now the GUI...
