@@ -195,15 +195,15 @@
       (loop until (= num-squares (* game-size game-size))
          do
            (with-slots (name score edge-function next-player) cur-player
-             (format t "~%~a: ~a |  ~a: ~a~%"
+             (format t "~a: ~a |  ~a: ~a~%"
                      (player-name (car players))
                      (player-score (car players))
                      (player-name (cdr players))
                      (player-score (cdr players)))
              (format t "================================~%")
              (show-square-graph graph)
-             (format t "================================~%")
-             (format t "It's ~a's turn!~%" name)
+             (format t "================================~%~%")
+             (format t "~%It's ~a's turn!~%" name)
              (multiple-value-bind (v1 v2) (funcall edge-function graph)
                (add-edge graph v1 v2)
                (let ((new-squares (count-complete-squares graph)))
@@ -211,15 +211,25 @@
                      (incf score (- new-squares num-squares))
                      (setf cur-player (funcall next-player players)))
                  (setf num-squares new-squares))))))
-      (let ((winner (if (> (player-score (car players)) (player-score (cdr players)))
-                        (car players)
-                        (cdr players))))
         (terpri)
-        (show-square-graph graph)
-        (format t "Game over!~% The score was ~a to ~a~%The winner is ~a~%~%"
+        (format t "~a: ~a |  ~a: ~a~%"
+                (player-name (car players))
                 (player-score (car players))
-                (player-score (cdr players))
-                (player-name winner)))))
+                (player-name (cdr players))
+                (player-score (cdr players)))
+        (format t "================================~%")
+        (show-square-graph graph)
+        (format t "================================~%")
+        (let ((car-score (player-score (car players)))
+              (cdr-score (player-score (cdr players))))
+          (format t "~%Game over!~%The score was ~a to ~a~%" car-score cdr-score)
+
+          (if (= car-score cdr-score)
+              (format t "It was a tie! Try again!~%")
+              (let ((winner (if (> car-score cdr-score)
+                                (car players)
+                                (cdr players))))
+                (format t "The winner is ~a~%~%" (player-name winner)))))))
 
 
 ;; And now the GUI...
