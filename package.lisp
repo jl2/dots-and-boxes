@@ -2,11 +2,11 @@
 ;;;;
 ;;;; Copyright (c) 2017 Jeremiah LaRocco <jeremiah.larocco@gmail.com>
 
-(defpackage #:dots-and-boxes
+(defpackage #:dab
   (:use #:cl+qt)
   (:export #:main
-           #:create-dots-and-boxes
-           #:dots-and-boxes-graph
+           #:create-dab
+           #:dab-graph
            #:count-complete-squares
            #:describe-graph
            #:add-edge))

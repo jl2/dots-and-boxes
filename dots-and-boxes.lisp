@@ -1,8 +1,8 @@
-;;;; dots-and-boxes.lisp
+;;;; dab.lisp
 ;;;;
 ;;;; Copyright (c) 2017 Jeremiah LaRocco <jeremiah.larocco@gmail.com>
 
-(in-package #:dots-and-boxes)
+(in-package #:dab)
 
 (named-readtables:in-readtable :qtools)
 
@@ -64,14 +64,14 @@
       (dolist (gt (aref edges i))
         (when (< i gt) (format stream "~a - ~a~%" i gt))))))
 
-(defstruct dots-and-boxes
+(defstruct dab
   "A structure representing a Dots and Boxes game."
   (game-size 2 :type fixnum)
   (graph (create-dab-graph 2) :type graph))
 
-(defun create-dots-and-boxes (size)
+(defun create-dab (size)
   "Construct a Dots and Boxes game object."
-  (make-dots-and-boxes :game-size size
+  (make-dab :game-size size
                        :graph (create-dab-graph size)))
 
 
@@ -96,7 +96,7 @@
           "Dots and Boxes.")))
 
 (define-widget dab-drawer (QWidget)
-  ((dab-game :initform (create-dots-and-boxes 4)))
+  ((dab-game :initform (create-dab 4)))
   (:documentation "Dots and boxes ."))
 
 (define-override (dab-drawer paint-event paint) (ev)
