@@ -9,5 +9,6 @@
            #:dab-graph
            #:count-complete-squares
            #:describe-graph
-           #:add-edge))
+           #:add-edge
+           #:has-edge-p))
 

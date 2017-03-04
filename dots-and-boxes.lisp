@@ -38,24 +38,32 @@
     (pushnew v1 (aref edges v0))
     (pushnew v0 (aref edges v1))))
 
+(defun has-edge-p (graph v0 v1)
+  "Return non-nil if an edge is in the graph, or nil if not."
+  (with-slots (edges) graph
+    (find v1 (aref edges v0))))
+
+(defun square-vertices-at (size i j)
+  "Return the vertices for the square at position i j."
+  (let* ((v1 (+ i (* j size)))
+         (v2 (1+ v1))
+         (v3 (+ 1 size v1))
+         (v4 (1+ v3)))
+    (values v1 v2 v3 v4)))
+
 (defun count-complete-squares (graph)
   "Count the number of 'complete' squares in the graph."
-  (with-slots (edges) graph
-    (let ((s-count 0)
-          (size (1- (isqrt (1+ (length edges))))))
-      (dotimes (j size)
-        (dotimes (i size)
-          (let* ((v1 (+ i (* j size)))
-                 (v2 (1+ v1))
-                 (v3 (+ 1 size v1))
-                 (v4 (1+ v3))
-                 (v1-v2 (find v2 (aref edges v1)))
-                 (v1-v3 (find v3 (aref edges v1)))
-                 (v2-v4 (find v4 (aref edges v2)))
-                 (v3-v4 (find v4 (aref edges v3))))
-            (when (and v1-v2 v1-v3 v2-v4 v3-v4)
-              (incf s-count)))))
-      s-count)))
+  (let ((s-count 0)
+        (size (1- (isqrt (1+ (length (graph-edges graph)))))))
+    (dotimes (j size)
+      (dotimes (i size)
+        (multiple-value-bind (v1 v2 v3 v4) (square-vertices-at size i j)
+          (when (and (has-edge-p graph v1 v2)
+                     (has-edge-p graph v1 v3)
+                     (has-edge-p graph v2 v4)
+                     (has-edge-p graph v3 v4))
+            (incf s-count)))))
+    s-count))
 
 (defun describe-graph (graph &optional (stream t))
   "Write an easy to read description of graph to the specified stream."
@@ -67,6 +75,10 @@
 (defstruct dab
   "A structure representing a Dots and Boxes game."
   (game-size 2 :type fixnum)
+  (num-squares 0 :type fixnum)
+  (human-score 0 :type fixnum)
+  (comp-score 0 :type fixnum)
+  (whose-turn :human)
   (graph (create-dab-graph 2) :type graph))
 
 (defun create-dab (size)
