@@ -9,29 +9,37 @@
 (declaim (optimize (speed 3) (safety 3) (size 0) (debug 3)))
 
 (defstruct point
+  "A two dimensional point object."
   (x-loc 0 :type fixnum)
   (y-loc 0 :type fixnum))
 
 
 (defstruct graph 
+  "Graph data structure implemented using adjacency lists."
   (points (make-array 0 :element-type 'point) :type (VECTOR point *))
   (edges (make-array 0 :element-type 'list)  :type (VECTOR list *)))
 
 (defun create-dab-graph (size)
+  "Create a graph with (* size size) points arranged in a square."
   (let ((arr-size (* (+ size 1) (+ size 1))))
-    (make-graph :points (make-array arr-size :initial-contents (loop for i below arr-size
-                                                                  collect (make-point
-                                                                           :x-loc (mod i (1+ size))
-                                                                           :y-loc (/ (- i (mod i (1+ size))) (1+ size))))
-                                    :element-type 'point)
-                :edges (make-array arr-size :initial-element nil :element-type 'list))))
+    (make-graph
+     :points (make-array arr-size
+                         :initial-contents
+                         (loop for i below arr-size
+                            collect (make-point
+                                     :x-loc (mod i (1+ size))
+                                     :y-loc (/ (- i (mod i (1+ size))) (1+ size))))
+                         :element-type 'point)
+     :edges (make-array arr-size :initial-element nil :element-type 'list))))
 
 (defun add-edge (graph v0 v1)
+  "Add an edge between vertices v0 and v1 to the graph."
   (with-slots (edges) graph
     (pushnew v1 (aref edges v0))
     (pushnew v0 (aref edges v1))))
 
 (defun count-complete-squares (graph)
+  "Count the number of 'complete' squares in the graph."
   (with-slots (edges) graph
     (let ((s-count 0)
           (size (1- (isqrt (1+ (length edges))))))
@@ -49,19 +57,26 @@
               (incf s-count)))))
       s-count)))
 
-(defun describe-graph (graph)
+(defun describe-graph (graph &optional (stream t))
+  "Write an easy to read description of graph to the specified stream."
   (with-slots (edges) graph
     (dotimes (i (length edges))
       (dolist (gt (aref edges i))
-        (when (< i gt) (format t "~a - ~a~%" i gt))))))
+        (when (< i gt) (format stream "~a - ~a~%" i gt))))))
 
 (defstruct dots-and-boxes
+  "A structure representing a Dots and Boxes game."
   (game-size 2 :type fixnum)
   (graph (create-dab-graph 2) :type graph))
 
 (defun create-dots-and-boxes (size)
+  "Construct a Dots and Boxes game object."
   (make-dots-and-boxes :game-size size
                        :graph (create-dab-graph size)))
+
+
+
+;; And now the GUI...
 
 (define-widget main-window (QMainWindow)
   ())
