@@ -28,11 +28,32 @@
 
 (defun add-edge (graph v0 v1)
   (with-slots (edges) graph
-    (push v1 (aref edges v0))
-    (push v0 (aref edges v1))))
+    (pushnew v1 (aref edges v0))
+    (pushnew v0 (aref edges v1))))
 
 (defun count-complete-squares (graph)
-  0)
+  (with-slots (edges) graph
+    (let ((s-count 0)
+          (size (1- (isqrt (1+ (length edges))))))
+      (dotimes (j size)
+        (dotimes (i size)
+          (let* ((v1 (+ i (* j size)))
+                 (v2 (1+ v1))
+                 (v3 (+ 1 size v1))
+                 (v4 (1+ v3))
+                 (v1-v2 (find v2 (aref edges v1)))
+                 (v1-v3 (find v3 (aref edges v1)))
+                 (v2-v4 (find v4 (aref edges v2)))
+                 (v3-v4 (find v4 (aref edges v3))))
+            (when (and v1-v2 v1-v3 v2-v4 v3-v4)
+              (incf s-count)))))
+      s-count)))
+
+(defun describe-graph (graph)
+  (with-slots (edges) graph
+    (dotimes (i (length edges))
+      (dolist (gt (aref edges i))
+        (when (< i gt) (format t "~a - ~a~%" i gt))))))
 
 (defstruct dots-and-boxes
   (game-size 2 :type fixnum)

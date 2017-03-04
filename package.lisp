@@ -8,5 +8,6 @@
            #:create-dots-and-boxes
            #:dots-and-boxes-graph
            #:count-complete-squares
+           #:describe-graph
            #:add-edge))
 
