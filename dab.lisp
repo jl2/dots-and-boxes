@@ -143,8 +143,12 @@
   (owners nil :type list)
   (players (cons (make-player :edge-function #'get-human-edge :name "Human" :next-player #'cdr :tag #\A)
                  (make-player :edge-function #'get-random-computer-edge :name "Computer" :next-player #'car :tag #\B)))
+  (current-player nil)
   (graph (create-dab-graph 2) :type graph))
 
+(defun game-over-p (dab)
+  (with-slots (squares game-size)
+      (= (length squares) (* (1+ game-size) (1+ game-size)))))
 
 (defun create-two-player-dab (size p1-name p2-name)
   "Construct a human vs human Dots and Boxes game."
@@ -167,6 +171,12 @@
             :players (cons (make-player :edge-function #'get-random-computer-edge :name p1-name :next-player #'cdr :tag #\A)
                            (make-player :edge-function #'get-random-computer-edge :name p2-name :next-player #'car :tag #\B))))
 
+(defun create-gui-dab (size)
+  "Create a computer vs human  Dots and Boxes game for a GUI (edge functions stubbed out)."
+  (make-dab :game-size size
+            :graph (create-dab-graph size)
+            :players (cons (make-player :edge-function nil :next-player #'cdr :tag :green)
+                           (make-player :edge-function #'get-random-computer-edge :next-player #'car :tag :red))))
 
 
 
@@ -249,25 +259,24 @@
 ;; And now the GUI...
 
 (define-widget main-window (QMainWindow)
-  ())
-
-(define-override (main-window close-event) (ev)
-  (q+:accept ev))
-
-(define-menu (main-window Game)
-  (:separator)
-  (:item ("Quit" (ctrl alt q))
-         (q+:close main-window)))
-
-(define-menu (main-window Help)
-  (:item "About"
-         (q+:qmessagebox-information
-          main-window "About"
-          "Dots and Boxes.")))
+  ((next-game-size :initform 2 :type fixnum))
+  (:documentation "Dots and boxes main window."))
 
 (define-widget dab-drawer (QWidget)
-  ((dab-game :initform (create-dab 4)))
+  ((dab-game :initform (create-gui-dab 4))
+   (two-closest :initform nil))
   (:documentation "Dots and boxes ."))
+
+(define-slot (dab-drawer new-game) ((size int))
+  (declare (connected dab-drawer (new-game int)))
+  (format t "Creating game of size: ~a~%" size)
+  (setf dab-game (create-gui-dab size))
+  (setf (dab-current-player dab-game) (car (dab-players dab-game)))
+  (setf two-closest nil)
+  (q+:repaint dab-drawer))
+
+(define-initializer (dab-drawer setup)
+  (setf (q+:mouse-tracking dab-drawer) t))
 
 (define-override (dab-drawer paint-event paint) (ev)
   "Handle paint events."
@@ -275,26 +284,146 @@
   (with-finalizing 
       ;; Create a painter object to draw on
       ((painter (q+:make-qpainter dab-drawer))
-       (pen (q+:make-qpen )))
+       (pen (q+:make-qpen (q+:make-qcolor 0 205 0)))
+       (graph (dab-graph dab-game))
+       (squares (dab-squares dab-game))
+       (owners (dab-owners dab-game)))
 
     ;; Clear the background
     (q+:fill-rect painter (q+:rect dab-drawer) (q+:qt.black))
     (q+:set-color pen (q+:make-qcolor 0 205 0))
     (q+:set-pen painter pen)
     (let* ((height (q+:height dab-drawer))
-           (width (q+:width dab-drawer)))
-      (q+:draw-arc painter
-                   (round (- (/ width 2) 10)) (round (- (/ height 2) 10))
-                   20 20
-                   0 (* 16 360))
-      (q+:draw-line painter 0 0 width height))))
+           (width (q+:width dab-drawer))
+           (smallest (min height width))
+           (adjusted-size (+ 2 (dab-game-size dab-game)))
+           (step-size (floor (/ smallest adjusted-size)))
+           (points (graph-points graph)))
+
+      (dolist (square squares)
+        (q+:fill-rect painter (q+:rect dab-drawer) (cdr (assoc square owners))))
+
+      (loop for pt across points
+         do
+           (let ((pt-x (- (+ step-size (* step-size (point-x-loc pt) )) 10))
+                 (pt-y (- (+ step-size (* step-size (point-y-loc pt) )) 10)))
+             (q+:draw-arc painter
+                          pt-x
+                          pt-y
+                          20 20
+                          0 (* 16 360))))
+      
+      (loop for i from 0
+         for edges across (graph-edges graph)
+         do
+           (dolist (vert edges)
+             (when (< i vert)
+               (let ((pt1 (aref points i))
+                     (pt2 (aref points vert)))
+                 (q+:draw-line painter
+                               (+ step-size (* step-size (point-x-loc pt1)))
+                               (+ step-size (* step-size (point-y-loc pt1)))
+                               (+ step-size (* step-size (point-x-loc pt2)))
+                               (+ step-size (* step-size (point-y-loc pt2))))))))
+
+      (when two-closest
+        (let ((pt1 (aref points (cdar two-closest)))
+              (pt2 (aref points (cdadr two-closest))))
+          (q+:set-color pen (q+:make-qcolor 205 0 0))
+          (q+:set-pen painter pen)
+          (q+:draw-line painter
+                        (+ step-size (* step-size (point-x-loc pt1)))
+                        (+ step-size (* step-size (point-y-loc pt1)))
+                        (+ step-size (* step-size (point-x-loc pt2)))
+                        (+ step-size (* step-size (point-y-loc pt2)))))))))
+
+(defun distance-squared (x1 y1 x2 y2)
+  (+ (* (- x2 x1) (- x2 x1)) (* (- y2 y1) (- y2 y1))))
+
+(defun find-two-closest (x y step-size graph)
+  "Return the two closest points to point x,y in graph."
+  (sort (loop 
+           for idx from 0
+           for pt across (graph-points graph)
+           collecting (cons (distance-squared x y 
+                                              (+ step-size (* step-size (point-x-loc pt)))
+                                              (+ step-size (* step-size (point-y-loc pt))))
+                            idx))
+        #'<
+        :key #'car))
+
+
+(define-override (dab-drawer mouse-release-event mouse-release) (ev)
+  (with-slots (game-size squares players graph owners current-player) dab-game
+    (let* ((height (q+:height dab-drawer))
+           (width (q+:width dab-drawer))
+           (smallest (min height width))
+           (adjusted-size (+ 2 (dab-game-size dab-game)))
+           (step-size (floor (/ smallest adjusted-size)))
+
+           (x-loc (q+:x ev))
+           (y-loc (q+:y ev))
+           (closest (find-two-closest x-loc y-loc step-size graph)))
+      
+      (when (not (has-edge-p graph (cdar closest) (cddr closest)))
+        (add-edge graph (cdar closest) (cdadr closest))
+        (setf two-closest nil))))
+  (q+:repaint dab-drawer))
+
+(define-override (dab-drawer mouse-move-event mouse-move) (ev)
+  (let* ((height (q+:height dab-drawer))
+         (width (q+:width dab-drawer))
+         (smallest (min height width))
+         (adjusted-size (+ 2 (dab-game-size dab-game)))
+         (step-size (floor (/ smallest adjusted-size)))
+         (graph (dab-graph dab-game))
+         (x-loc (q+:x ev))
+         (y-loc (q+:y ev))
+         (closest (find-two-closest x-loc y-loc step-size graph)))
+    (if (not (has-edge-p graph (cdar closest) (cdadr closest)))
+      (setf two-closest closest)
+      (setf two-closest nil)))
+  (q+:repaint dab-drawer))
 
 (define-subwidget (main-window dab-widget) (make-instance 'dab-drawer)
-  "The dab-drawer itself.")
+  "The dab-drawer itself."
+  )
+
+(define-override (main-window close-event) (ev)
+  (q+:accept ev))
+
+(define-menu (main-window Game)
+  
+  (:item ("New Game" (ctrl alt n))
+         (signal! dab-widget (new-game int) next-game-size)
+         (q+:repaint main-window))
+  (:separator)
+  (:item ("Quit" (ctrl alt q))
+         (q+:close main-window)))
+
+(define-menu (main-window Size)
+  (:item "Two"
+         (setf next-game-size 2))
+  (:item "Four"
+         (setf next-game-size 4))
+  (:item "Eight"
+         (setf next-game-size 8))
+  (:item "Sixteen"
+         (setf next-game-size 16)))
+
+(define-menu (main-window Help)
+  (:item "About"
+         (q+:qmessagebox-information
+          main-window "About"
+          "Dots and Boxes.")))
+
+(define-slot (main-window game-size) ((size int))
+  (setf next-game-size size))
 
 (define-initializer (main-window setup)
   "Set the window title and set the dab-widget to be the central widget."
   (setf (q+:window-title main-window) "Dots And Boxes")
+  (setf (q+:mouse-tracking main-window) t)
   (setf (q+:central-widget main-window) dab-widget))
 
 (defun main ()
