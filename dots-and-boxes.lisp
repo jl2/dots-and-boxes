@@ -43,53 +43,53 @@
   (with-slots (edges) graph
     (find v1 (aref edges v0))))
 
-(defun game-size+1 (graph)
+(defun game-dot-size (graph)
   "Compute the game size + 1 (the number of vertices across)."
   (isqrt (1+ (length (graph-edges graph)))))
-
-(defun square-vertices-at (graph i j)
-  "Return the vertices for the square at position i j."
-  (verts-for-square graph (+ i (* j (game-size+1 graph)))))
 
 (defun verts-for-square (graph v1)
   "The vertices that make up the square who's upper left corner is vertex v."
   (let* ((v2 (1+ v1))
-         (v3 (+ (game-size+1 graph) v1))
+         (v3 (+ (game-dot-size graph) v1))
          (v4 (1+ v3)))
     (values v1 v2 v3 v4)))
 
-(defun count-complete-squares (graph)
+
+(defun find-complete-squares (graph)
   "Count the number of 'complete' squares in the graph."
   (let ((s-count 0)
-        (size (1- (game-size+1 graph))))
-    (dotimes (j size)
-      (dotimes (i size)
-        (multiple-value-bind (v1 v2 v3 v4) (square-vertices-at graph i j)
+        (dot-size (game-dot-size graph))
+        (box-size (1- (game-dot-size graph)))
+        (squares nil))
+    (dotimes (j box-size)
+      (dotimes (i box-size)
+        (multiple-value-bind (v1 v2 v3 v4) (verts-for-square graph (+ i (* j dot-size)))
           (when (and (has-edge-p graph v1 v2)
                      (has-edge-p graph v1 v3)
                      (has-edge-p graph v2 v4)
                      (has-edge-p graph v3 v4))
-            (incf s-count)))))
-    s-count))
+            (push v1 squares)))))
+    squares))
 
 (defun get-possibilities (graph vertex)
-  "Return the list of possible moves available for the specified vertex."
+  "Return a list of the possible moves available for the specified vertex."
   (let* ((possibilities nil)
-         (size+1 (game-size+1 graph))
-         (j (mod vertex size+1))
-         (i (/ (- vertex j) size+1)))
+         (dot-size (game-dot-size graph))
+         (j (mod vertex dot-size))
+         (i (/ (- vertex j) dot-size)))
 
-    (when (and (< i (1- size+1)) (not (has-edge-p graph vertex (+ size+1 vertex))))
-      (push (+ size+1 vertex) possibilities))
+    ;; Order is important here and done this way to make sure the possibilities list is sorted
+    (when (and (< i (1- dot-size)) (not (has-edge-p graph vertex (+ dot-size vertex))))
+      (push (+ dot-size vertex) possibilities))
 
-    (when (and (< j (1- size+1)) (not (has-edge-p graph vertex (1+ vertex))))
+    (when (and (< j (1- dot-size)) (not (has-edge-p graph vertex (1+ vertex))))
       (push (1+ vertex) possibilities))
 
     (when (and (> j 0) (not (has-edge-p graph vertex (1- vertex))))
       (push (1- vertex) possibilities))
 
-    (when (and (> i 0) (not (has-edge-p graph vertex (- vertex size+1))))
-      (push (- vertex size+1) possibilities))
+    (when (and (> i 0) (not (has-edge-p graph vertex (- vertex dot-size))))
+      (push (- vertex dot-size) possibilities))
 
     possibilities))
 
@@ -122,9 +122,9 @@
   "Figure out a computer move."
   (declare (ignorable graph))
   (loop for vert = (random (length (graph-edges graph))) then (random (length (graph-edges graph)))
-       for possibilities = (get-possibilities graph vert)
+     for possibilities = (get-possibilities graph vert)
      while (not possibilities)
-       finally (return-from get-random-computer-edge (values vert (nth (random (length possibilities)) possibilities)))))
+     finally (return-from get-random-computer-edge (values vert (nth (random (length possibilities)) possibilities)))))
 
 
 
@@ -133,14 +133,16 @@
   (score 0 :type fixnum)
   (edge-function #'get-human-edge)
   (name "human" :type string)
+  (tag #\a)
   (next-player #'cdr))
 
 (defstruct dab
   "A structure representing a Dots and Boxes game."
   (game-size 2 :type fixnum)
-  (num-squares 0 :type fixnum)
-  (players (cons (make-player :edge-function #'get-human-edge :name "Human" :next-player #'cdr)
-                 (make-player :edge-function #'get-random-computer-edge :name "Computer" :next-player #'car)))
+  (squares nil :type list)
+  (owners nil :type list)
+  (players (cons (make-player :edge-function #'get-human-edge :name "Human" :next-player #'cdr :tag #\A)
+                 (make-player :edge-function #'get-random-computer-edge :name "Computer" :next-player #'car :tag #\B)))
   (graph (create-dab-graph 2) :type graph))
 
 
@@ -148,80 +150,91 @@
   "Construct a human vs human Dots and Boxes game."
   (make-dab :game-size size
             :graph (create-dab-graph size)
-            :players (cons (make-player :edge-function #'get-human-edge :name p1-name :next-player #'cdr)
-                           (make-player :edge-function #'get-human-edge :name p2-name :next-player #'car))))
+            :players (cons (make-player :edge-function #'get-human-edge :name p1-name :next-player #'cdr :tag #\A)
+                           (make-player :edge-function #'get-human-edge :name p2-name :next-player #'car :tag #\B))))
 
 (defun create-computer-human-dab (size p-name)
   "Create a human vs computer Dots and Boxes game."
   (make-dab :game-size size
             :graph (create-dab-graph size)
-            :players (cons (make-player :edge-function #'get-human-edge :name p-name :next-player #'cdr)
-                           (make-player :edge-function #'get-random-computer-edge :name "Computer" :next-player #'car))))
+            :players (cons (make-player :edge-function #'get-human-edge :name p-name :next-player #'cdr :tag #\A)
+                           (make-player :edge-function #'get-random-computer-edge :name "Computer" :next-player #'car :tag #\B))))
 
 (defun create-computer-computer-dab (size p1-name p2-name)
   "Create a computer vs computer Dots and Boxes game."
   (make-dab :game-size size
             :graph (create-dab-graph size)
-            :players (cons (make-player :edge-function #'get-random-computer-edge :name p1-name :next-player #'cdr)
-                           (make-player :edge-function #'get-random-computer-edge :name p2-name :next-player #'car))))
+            :players (cons (make-player :edge-function #'get-random-computer-edge :name p1-name :next-player #'cdr :tag #\A)
+                           (make-player :edge-function #'get-random-computer-edge :name p2-name :next-player #'car :tag #\B))))
 
 
 
 
-(defun show-square-graph (graph)
+(defun show-square-graph (graph owners)
   "Display a square graph."
-  (let ((size+1 (game-size+1 graph)))
-    (dotimes (j size+1)
-      (dotimes (i size+1)
-        (multiple-value-bind (v1 v2 v3 v4) (square-vertices-at graph i j)
+  (let ((dot-size (game-dot-size graph)))
+    (dotimes (j dot-size)
+      (dotimes (i dot-size)
+        (multiple-value-bind (v1 v2 v3 v4) (verts-for-square graph (+ i (* j dot-size)))
           (declare (ignorable v3 v4))
           (if (has-edge-p graph v1 v2)
               (format t "~2d---" v1)
               (format t "~2d   " v1))))
       (terpri)
-      (dotimes (i size+1)
-        (multiple-value-bind (v1 v2 v3 v4) (square-vertices-at graph i j)
+      (dotimes (i dot-size)
+        (multiple-value-bind (v1 v2 v3 v4) (verts-for-square graph (+ i (* j dot-size)))
           (declare (ignorable v3 v4))
           (if (has-edge-p graph v1 v3)
-              (format t " |   ")
+              (let* ((vert (+ i (* j dot-size)))
+                     (owner-pair (assoc vert owners))
+                     (owner (if owner-pair (cdr owner-pair) #\space)))
+                (format t " | ~a " owner))
               (format t "     "))))
       (terpri))))
 
 
-(defun play-dab-game (dab)
+(defun play-dab-game (dab &optional (verbosity 2))
   "Play a game of Dots and Boxes against the computer."
-  (with-slots (game-size num-squares players graph) dab
-    (let ((cur-player (car players)))
-      (loop until (= num-squares (* game-size game-size))
+  (with-slots (game-size squares players graph owners) dab
+    (let ((cur-player (car players))
+          (old-len 0))
+      (loop until (= (length squares) (* game-size game-size))
          do
-           (with-slots (name score edge-function next-player) cur-player
-             (format t "~a: ~a |  ~a: ~a~%"
-                     (player-name (car players))
-                     (player-score (car players))
-                     (player-name (cdr players))
-                     (player-score (cdr players)))
-             (format t "================================~%")
-             (show-square-graph graph)
-             (format t "================================~%~%")
-             (format t "~%It's ~a's turn!~%" name)
+           (with-slots (name score edge-function next-player tag) cur-player
+             (when (> verbosity 1)
+               (format t "~a: ~a |  ~a: ~a~%"
+                       (player-name (car players))
+                       (player-score (car players))
+                       (player-name (cdr players))
+                       (player-score (cdr players)))
+               (format t "================================~%")
+               (show-square-graph graph owners)
+               (format t "================================~%~%")
+               (format t "~%It's ~a's turn!~%" name))
              (multiple-value-bind (v1 v2) (funcall edge-function graph)
                (add-edge graph v1 v2)
-               (let ((new-squares (count-complete-squares graph)))
-                 (if (> new-squares num-squares)
-                     (incf score (- new-squares num-squares))
+               (let* ((new-squares (find-complete-squares graph))
+                      (new-len (length new-squares)))
+                 (if (> new-len old-len)
+                     (progn 
+                       (dolist (square (set-difference new-squares squares))
+                         (push (cons square tag) owners))
+                       (incf score (- new-len old-len)))
                      (setf cur-player (funcall next-player players)))
-                 (setf num-squares new-squares))))))
-        (terpri)
-        (format t "~a: ~a |  ~a: ~a~%"
-                (player-name (car players))
-                (player-score (car players))
-                (player-name (cdr players))
-                (player-score (cdr players)))
-        (format t "================================~%")
-        (show-square-graph graph)
-        (format t "================================~%")
-        (let ((car-score (player-score (car players)))
-              (cdr-score (player-score (cdr players))))
+                 (setf squares new-squares)
+                 (setf old-len new-len)))))
+      (let ((car-score (player-score (car players)))
+            (cdr-score (player-score (cdr players))))
+        (when (> verbosity 0)
+          (terpri)
+          (format t "~a: ~a |  ~a: ~a~%"
+                  (player-name (car players))
+                  (player-score (car players))
+                  (player-name (cdr players))
+                  (player-score (cdr players)))
+          (format t "================================~%")
+          (show-square-graph graph owners)
+          (format t "================================~%")
           (format t "~%Game over!~%The score was ~a to ~a~%" car-score cdr-score)
 
           (if (= car-score cdr-score)
@@ -229,7 +242,8 @@
               (let ((winner (if (> car-score cdr-score)
                                 (car players)
                                 (cdr players))))
-                (format t "The winner is ~a~%~%" (player-name winner)))))))
+                (format t "The winner is ~a~%~%" (player-name winner)))))
+        (cons car-score cdr-score)))))
 
 
 ;; And now the GUI...
