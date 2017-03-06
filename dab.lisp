@@ -38,6 +38,12 @@
     (pushnew v1 (aref edges v0))
     (pushnew v0 (aref edges v1))))
 
+(defun remove-edge (graph v0 v1)
+  "Add an edge between vertices v0 and v1 to the graph."
+  (with-slots (edges) graph
+    (setf (aref edges v0) (delete v1 (aref edges v0)))
+    (setf (aref edges v1) (delete v0 (aref edges v1)))))
+
 (defun has-edge-p (graph v0 v1)
   "Return non-nil if an edge is in the graph, or nil if not."
   (with-slots (edges) graph
@@ -100,24 +106,6 @@
       (dolist (gt (aref edges i))
         (when (< i gt) (format stream "~a - ~a~%" i gt))))))
 
-
-(defun get-human-edge (graph)
-  "Read the player's edge value from the keyboard."
-  (declare (ignorable graph))
-  (loop
-     do
-       (format t "Enter your first vertex: ")
-       (let* ((v1 (read))
-              (others (get-possibilities graph v1)))
-         (if others
-             (progn
-               (format t "Enter second vertex (~{~a~^ ~}): " others)
-               (let ((v2 (read)))
-                 (when (and (find v2 others) (not (has-edge-p graph v1 v2)))
-                   (return-from get-human-edge (values v1 v2)))
-                 (format t "The edge ~a ~a is not allowed, please try again!~%" v1 v2)))
-             (format t "That edge has no available edges! Please pick another!~%")))))
-
 (defun get-random-computer-edge (graph)
   "Figure out a computer move."
   (declare (ignorable graph))
@@ -131,213 +119,181 @@
 (defstruct player
   "A player object containing a score, a function for getting an edge, a name, and a function to determine the next player."
   (score 0 :type fixnum)
-  (edge-function #'get-human-edge)
-  (name "human" :type string)
-  (tag #\a)
-  (next-player #'cdr))
+  (color :green)
+  (edge-function nil))
 
 (defstruct dab
   "A structure representing a Dots and Boxes game."
   (game-size 2 :type fixnum)
   (squares nil :type list)
   (owners nil :type list)
-  (players (cons (make-player :edge-function #'get-human-edge :name "Human" :next-player #'cdr :tag #\A)
-                 (make-player :edge-function #'get-random-computer-edge :name "Computer" :next-player #'car :tag #\B)))
-  (current-player nil)
-  (graph (create-dab-graph 2) :type graph))
+  (human-player (make-player :color :green :score 0))
+  (computer-player (make-player :color :red :score 0 :edge-function #'get-random-computer-edge))
+  (graph (create-dab-graph 2) :type graph) 
+  (current-player :human))
 
 (defun game-over-p (dab)
-  (with-slots (squares game-size)
-      (= (length squares) (* (1+ game-size) (1+ game-size)))))
-
-(defun create-two-player-dab (size p1-name p2-name)
-  "Construct a human vs human Dots and Boxes game."
-  (make-dab :game-size size
-            :graph (create-dab-graph size)
-            :players (cons (make-player :edge-function #'get-human-edge :name p1-name :next-player #'cdr :tag #\A)
-                           (make-player :edge-function #'get-human-edge :name p2-name :next-player #'car :tag #\B))))
-
-(defun create-computer-human-dab (size p-name)
-  "Create a human vs computer Dots and Boxes game."
-  (make-dab :game-size size
-            :graph (create-dab-graph size)
-            :players (cons (make-player :edge-function #'get-human-edge :name p-name :next-player #'cdr :tag #\A)
-                           (make-player :edge-function #'get-random-computer-edge :name "Computer" :next-player #'car :tag #\B))))
-
-(defun create-computer-computer-dab (size p1-name p2-name)
-  "Create a computer vs computer Dots and Boxes game."
-  (make-dab :game-size size
-            :graph (create-dab-graph size)
-            :players (cons (make-player :edge-function #'get-random-computer-edge :name p1-name :next-player #'cdr :tag #\A)
-                           (make-player :edge-function #'get-random-computer-edge :name p2-name :next-player #'car :tag #\B))))
+  "Check if the game is over yet."
+  (with-slots (squares game-size) dab
+      (= (length squares) (* game-size game-size))))
 
 (defun create-gui-dab (size)
   "Create a computer vs human  Dots and Boxes game for a GUI (edge functions stubbed out)."
   (make-dab :game-size size
             :graph (create-dab-graph size)
-            :players (cons (make-player :edge-function nil :next-player #'cdr :tag :green)
-                           (make-player :edge-function #'get-random-computer-edge :next-player #'car :tag :red))))
-
-
-
-(defun show-square-graph (graph owners)
-  "Display a square graph."
-  (let ((dot-size (game-dot-size graph)))
-    (dotimes (j dot-size)
-      (dotimes (i dot-size)
-        (multiple-value-bind (v1 v2 v3 v4) (verts-for-square graph (+ i (* j dot-size)))
-          (declare (ignorable v3 v4))
-          (if (has-edge-p graph v1 v2)
-              (format t "~2d---" v1)
-              (format t "~2d   " v1))))
-      (terpri)
-      (dotimes (i dot-size)
-        (multiple-value-bind (v1 v2 v3 v4) (verts-for-square graph (+ i (* j dot-size)))
-          (declare (ignorable v3 v4))
-          (if (has-edge-p graph v1 v3)
-              (let* ((vert (+ i (* j dot-size)))
-                     (owner-pair (assoc vert owners))
-                     (owner (if owner-pair (cdr owner-pair) #\space)))
-                (format t " | ~a " owner))
-              (format t "     "))))
-      (terpri))))
-
-
-(defun play-dab-game (dab &optional (verbosity 2))
-  "Play a game of Dots and Boxes against the computer."
-  (with-slots (game-size squares players graph owners) dab
-    (let ((cur-player (car players))
-          (old-len 0))
-      (loop until (= (length squares) (* game-size game-size))
-         do
-           (with-slots (name score edge-function next-player tag) cur-player
-             (when (> verbosity 1)
-               (format t "~a: ~a |  ~a: ~a~%"
-                       (player-name (car players))
-                       (player-score (car players))
-                       (player-name (cdr players))
-                       (player-score (cdr players)))
-               (format t "================================~%")
-               (show-square-graph graph owners)
-               (format t "================================~%~%")
-               (format t "~%It's ~a's turn!~%" name))
-             (multiple-value-bind (v1 v2) (funcall edge-function graph)
-               (add-edge graph v1 v2)
-               (let* ((new-squares (find-complete-squares graph))
-                      (new-len (length new-squares)))
-                 (if (> new-len old-len)
-                     (progn 
-                       (dolist (square (set-difference new-squares squares))
-                         (push (cons square tag) owners))
-                       (incf score (- new-len old-len)))
-                     (setf cur-player (funcall next-player players)))
-                 (setf squares new-squares)
-                 (setf old-len new-len)))))
-      (let ((car-score (player-score (car players)))
-            (cdr-score (player-score (cdr players))))
-        (when (> verbosity 0)
-          (terpri)
-          (format t "~a: ~a |  ~a: ~a~%"
-                  (player-name (car players))
-                  (player-score (car players))
-                  (player-name (cdr players))
-                  (player-score (cdr players)))
-          (format t "================================~%")
-          (show-square-graph graph owners)
-          (format t "================================~%")
-          (format t "~%Game over!~%The score was ~a to ~a~%" car-score cdr-score)
-
-          (if (= car-score cdr-score)
-              (format t "It was a tie! Try again!~%")
-              (let ((winner (if (> car-score cdr-score)
-                                (car players)
-                                (cdr players))))
-                (format t "The winner is ~a~%~%" (player-name winner)))))
-        (cons car-score cdr-score)))))
+            :human-player (make-player :score 0 :color (q+:qt.green) :edge-function nil)
+            :computer-player (make-player :score 0 :color (q+:qt.red) :edge-function #'get-random-computer-edge)))
 
 
 ;; And now the GUI...
 
 (define-widget main-window (QMainWindow)
-  ((next-game-size :initform 2 :type fixnum))
-  (:documentation "Dots and boxes main window."))
+  ((next-game-size :initform 4 :type fixnum))
+  (:documentation "A Window containing a dots and boxes widget."))
 
-(define-widget dab-drawer (QWidget)
+(define-widget dab-game-widget (QWidget)
   ((dab-game :initform (create-gui-dab 4))
    (two-closest :initform nil))
-  (:documentation "Dots and boxes ."))
+  (:documentation "A widget that playes a plays a game of Dots and Boxes."))
 
-(define-slot (dab-drawer new-game) ((size int))
-  (declare (connected dab-drawer (new-game int)))
-  (format t "Creating game of size: ~a~%" size)
+(define-initializer (dab-game-widget setup)
+  "Turn on mouse tracking."
+  (setf (q+:mouse-tracking dab-game-widget) t))
+
+(defun handle-new-edge (dab v1 v2)
+  "Add a new edge to the game graph, add any new squares to the list of them, increment score, and check for game over."
+  (with-slots (graph squares owners current-player human-player computer-player) dab
+    (add-edge graph v1 v2)
+    (let* ((new-squares (find-complete-squares graph))
+           (new-len (length new-squares))
+           (old-len (length squares))
+           (color (player-color (if (eq current-player :human) human-player computer-player))))
+      (if (> new-len old-len)
+          (progn 
+            (dolist (square (set-difference new-squares squares))
+              (push (cons square color) owners))
+            (incf (player-score (if (eq current-player :human) human-player computer-player)) (- new-len old-len)))
+          (setf current-player (if (eq :computer current-player) :human :computer)))
+      (setf squares new-squares)
+      (if (game-over-p dab)
+          :game-over
+          current-player))))
+
+(define-slot (dab-game-widget new-game) ((size int))
+  "Start a new game."
+  (declare (connected dab-game-widget (new-game int)))
   (setf dab-game (create-gui-dab size))
-  (setf (dab-current-player dab-game) (car (dab-players dab-game)))
   (setf two-closest nil)
-  (q+:repaint dab-drawer))
+  (q+:repaint dab-game-widget))
 
-(define-initializer (dab-drawer setup)
-  (setf (q+:mouse-tracking dab-drawer) t))
+(define-slot (dab-game-widget computer-turn) ()
+  "Place an edge for the computer."
+  (declare (connected dab-game-widget (computer-turn)))
+  (with-slots (computer-player graph squares) dab-game
+    (multiple-value-bind (v1 v2) (funcall (player-edge-function computer-player) graph)
+      (let ((result (handle-new-edge dab-game v1 v2)))
+        (q+:repaint dab-game-widget)
+        (cond ((eq result :game-over) (signal! dab-game-widget (game-over)))
+              ((eq result :computer) (signal! dab-game-widget (computer-turn))))))))
 
-(define-override (dab-drawer paint-event paint) (ev)
+(define-slot (dab-game-widget game-over) ()
+  "Handle the end of the game."
+  (declare (connected dab-game-widget (game-over)))
+  (with-slots (computer-player human-player) dab-game
+    (let ((message (if (= (player-score human-player) (player-score computer-player))
+                       "It was a tie! Try again!"
+                       (if (> (player-score human-player) (player-score computer-player))
+                           (format nil "You won, ~a to ~a!" (player-score human-player) (player-score computer-player))
+                           (format nil "You've lost! ~a to ~a!" (player-score human-player) (player-score computer-player))))))
+      (q+:qmessagebox-information dab-game-widget "Game Over!" message))))
+
+(define-override (dab-game-widget paint-event paint) (ev)
   "Handle paint events."
 
   (with-finalizing 
       ;; Create a painter object to draw on
-      ((painter (q+:make-qpainter dab-drawer))
-       (pen (q+:make-qpen (q+:make-qcolor 0 205 0)))
-       (graph (dab-graph dab-game))
-       (squares (dab-squares dab-game))
-       (owners (dab-owners dab-game)))
+      ((painter (q+:make-qpainter dab-game-widget))
+       (green-pen (q+:make-qpen (q+:make-qcolor 0 205 0)))
+       (red-pen (q+:make-qpen (q+:make-qcolor 205 0 0))))
 
-    ;; Clear the background
-    (q+:fill-rect painter (q+:rect dab-drawer) (q+:qt.black))
-    (q+:set-color pen (q+:make-qcolor 0 205 0))
-    (q+:set-pen painter pen)
-    (let* ((height (q+:height dab-drawer))
-           (width (q+:width dab-drawer))
-           (smallest (min height width))
-           (adjusted-size (+ 2 (dab-game-size dab-game)))
-           (step-size (floor (/ smallest adjusted-size)))
-           (points (graph-points graph)))
+    (with-slots (graph squares owners) dab-game
 
-      (dolist (square squares)
-        (q+:fill-rect painter (q+:rect dab-drawer) (cdr (assoc square owners))))
+      ;; Clear the background
+      (q+:fill-rect painter (q+:rect dab-game-widget) (q+:qt.black))
+      (q+:set-pen painter green-pen)
+      (let* ((height (q+:height dab-game-widget))
+             (width (q+:width dab-game-widget))
+             (smallest (min height width))
+             (adjusted-size (+ 2 (dab-game-size dab-game)))
+             (step-size (floor (/ smallest adjusted-size)))
+             (points (graph-points graph)))
 
-      (loop for pt across points
-         do
-           (let ((pt-x (- (+ step-size (* step-size (point-x-loc pt) )) 10))
-                 (pt-y (- (+ step-size (* step-size (point-y-loc pt) )) 10)))
-             (q+:draw-arc painter
-                          pt-x
-                          pt-y
-                          20 20
-                          0 (* 16 360))))
-      
-      (loop for i from 0
-         for edges across (graph-edges graph)
-         do
-           (dolist (vert edges)
-             (when (< i vert)
-               (let ((pt1 (aref points i))
-                     (pt2 (aref points vert)))
-                 (q+:draw-line painter
-                               (+ step-size (* step-size (point-x-loc pt1)))
-                               (+ step-size (* step-size (point-y-loc pt1)))
-                               (+ step-size (* step-size (point-x-loc pt2)))
-                               (+ step-size (* step-size (point-y-loc pt2))))))))
+        ;; Draw filled squares
+        (flet ((draw-square (square &optional temp)
+                 (let ((pt (aref (graph-points graph) square)))
+                   (q+:fill-rect painter 
+                                 (+ step-size (* step-size (point-x-loc pt) ))
+                                 (+ step-size (* step-size (point-y-loc pt) ))
+                                 step-size
+                                 step-size
+                                 (if temp
+                                     (q+:qt.blue)
+                                     (cdr (assoc square owners)))))))
 
-      (when two-closest
-        (let ((pt1 (aref points (cdar two-closest)))
-              (pt2 (aref points (cdadr two-closest))))
-          (q+:set-color pen (q+:make-qcolor 205 0 0))
-          (q+:set-pen painter pen)
-          (q+:draw-line painter
-                        (+ step-size (* step-size (point-x-loc pt1)))
-                        (+ step-size (* step-size (point-y-loc pt1)))
-                        (+ step-size (* step-size (point-x-loc pt2)))
-                        (+ step-size (* step-size (point-y-loc pt2)))))))))
+          ;; Finished squares
+          (dolist (square squares)
+            (draw-square square))
+
+          ;; Potentially finished by player's next move
+          (when two-closest
+            (let ((v0 (cdar two-closest))
+                  (v1 (cdadr two-closest)))
+              (when (not (has-edge-p graph v0 v1 ))
+                (add-edge graph v0 v1)
+                (let ((new-squares (set-difference (find-complete-squares graph) squares)))
+                  (dolist (square new-squares)
+                    (draw-square square t)))
+                (remove-edge graph v0 v1)))))
+
+        ;; Draw edges
+        (loop for i from 0
+           for edges across (graph-edges graph)
+           do
+             (dolist (vert edges)
+               (when (< i vert)
+                 (let ((pt1 (aref points i))
+                       (pt2 (aref points vert)))
+                   (q+:draw-line painter
+                                 (+ step-size (* step-size (point-x-loc pt1)))
+                                 (+ step-size (* step-size (point-y-loc pt1)))
+                                 (+ step-size (* step-size (point-x-loc pt2)))
+                                 (+ step-size (* step-size (point-y-loc pt2))))))))
+
+        ;; Draw player's potential next move
+        (when two-closest
+          (let ((pt1 (aref points (cdar two-closest)))
+                (pt2 (aref points (cdadr two-closest))))
+            (q+:set-pen painter red-pen)
+            (q+:draw-line painter
+                          (+ step-size (* step-size (point-x-loc pt1)))
+                          (+ step-size (* step-size (point-y-loc pt1)))
+                          (+ step-size (* step-size (point-x-loc pt2)))
+                          (+ step-size (* step-size (point-y-loc pt2))))))
+
+        ;; Draw points
+        (q+:set-pen painter green-pen)
+        (loop for pt across points
+           do
+             (let ((pt-x (- (+ step-size (* step-size (point-x-loc pt) )) 10))
+                   (pt-y (- (+ step-size (* step-size (point-y-loc pt) )) 10)))
+               (q+:draw-arc painter
+                            pt-x
+                            pt-y
+                            20 20
+                            0 (* 16 360))))))))
 
 (defun distance-squared (x1 y1 x2 y2)
+  "Squared distance between two points."
   (+ (* (- x2 x1) (- x2 x1)) (* (- y2 y1) (- y2 y1))))
 
 (defun find-two-closest (x y step-size graph)
@@ -353,47 +309,55 @@
         :key #'car))
 
 
-(define-override (dab-drawer mouse-release-event mouse-release) (ev)
+(define-override (dab-game-widget mouse-release-event mouse-release) (ev)
+  "Handle a mouse click by possibly adding a new edge."
   (with-slots (game-size squares players graph owners current-player) dab-game
-    (let* ((height (q+:height dab-drawer))
-           (width (q+:width dab-drawer))
-           (smallest (min height width))
-           (adjusted-size (+ 2 (dab-game-size dab-game)))
-           (step-size (floor (/ smallest adjusted-size)))
+    (when (and (not (game-over-p dab-game)) (eq current-player :human))
+      (let* ((height (q+:height dab-game-widget))
+             (width (q+:width dab-game-widget))
+             (smallest (min height width))
+             (adjusted-size (+ 2 (dab-game-size dab-game)))
+             (step-size (floor (/ smallest adjusted-size)))
 
-           (x-loc (q+:x ev))
-           (y-loc (q+:y ev))
-           (closest (find-two-closest x-loc y-loc step-size graph)))
-      
-      (when (not (has-edge-p graph (cdar closest) (cddr closest)))
-        (add-edge graph (cdar closest) (cdadr closest))
-        (setf two-closest nil))))
-  (q+:repaint dab-drawer))
+             (x-loc (q+:x ev))
+             (y-loc (q+:y ev))
+             (closest (find-two-closest x-loc y-loc step-size graph))
+             (v1 (cdar closest))
+             (v2 (cdadr closest)))
+        (when (not (has-edge-p graph v1 v2))
+          (setf two-closest nil)
+          (let ((result (handle-new-edge dab-game v1 v2)))
+            (cond ((eq result :game-over) (signal! dab-game-widget (game-over)))
+                  ((eq result :computer) (signal! dab-game-widget (computer-turn)))))
+          (q+:repaint dab-game-widget))))))
 
-(define-override (dab-drawer mouse-move-event mouse-move) (ev)
-  (let* ((height (q+:height dab-drawer))
-         (width (q+:width dab-drawer))
+(define-override (dab-game-widget mouse-move-event mouse-move) (ev)
+  "Find the closest edge to the user's mouse and highlight it if it's not already in the graph."
+  (let* ((height (q+:height dab-game-widget))
+         (width (q+:width dab-game-widget))
          (smallest (min height width))
          (adjusted-size (+ 2 (dab-game-size dab-game)))
          (step-size (floor (/ smallest adjusted-size)))
          (graph (dab-graph dab-game))
          (x-loc (q+:x ev))
          (y-loc (q+:y ev))
-         (closest (find-two-closest x-loc y-loc step-size graph)))
-    (if (not (has-edge-p graph (cdar closest) (cdadr closest)))
-      (setf two-closest closest)
-      (setf two-closest nil)))
-  (q+:repaint dab-drawer))
+         (closest (find-two-closest x-loc y-loc step-size graph))
+         (v1 (cdar closest))
+         (v2 (cddr closest)))
 
-(define-subwidget (main-window dab-widget) (make-instance 'dab-drawer)
-  "The dab-drawer itself."
-  )
+    (if (not (has-edge-p graph v1 v2))
+        (setf two-closest closest)
+        (setf two-closest nil)))
+  (q+:repaint dab-game-widget))
+
+(define-subwidget (main-window dab-widget) (make-instance 'dab-game-widget)
+  "The dab-game-widget itself.")
 
 (define-override (main-window close-event) (ev)
+  "Handle close events."
   (q+:accept ev))
 
 (define-menu (main-window Game)
-  
   (:item ("New Game" (ctrl alt n))
          (signal! dab-widget (new-game int) next-game-size)
          (q+:repaint main-window))
@@ -401,23 +365,29 @@
   (:item ("Quit" (ctrl alt q))
          (q+:close main-window)))
 
+;; This is lame, I need to learn how to use check boxes in menus...
 (define-menu (main-window Size)
   (:item "Two"
          (setf next-game-size 2))
+  (:item "Three"
+         (setf next-game-size 3))
   (:item "Four"
          (setf next-game-size 4))
+  (:item "Five"
+         (setf next-game-size 5))
+  (:item "Six"
+         (setf next-game-size 6))
+  (:item "Seven"
+         (setf next-game-size 7))
   (:item "Eight"
-         (setf next-game-size 8))
-  (:item "Sixteen"
-         (setf next-game-size 16)))
+         (setf next-game-size 8)))
 
 (define-menu (main-window Help)
   (:item "About"
-         (q+:qmessagebox-information
-          main-window "About"
-          "Dots and Boxes.")))
+         (q+:qmessagebox-information main-window "About" "Dots and Boxes.")))
 
 (define-slot (main-window game-size) ((size int))
+  "Handle a change in game size."
   (setf next-game-size size))
 
 (define-initializer (main-window setup)
