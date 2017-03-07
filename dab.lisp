@@ -136,24 +136,66 @@
      while (not possibilities)
      finally (return-from get-random-computer-edge (values vert (nth (random (length possibilities)) possibilities)))))
 
+(defmacro with-edge ((graph v0 v1) &body body)
+  `(when (not (has-edge-p ,graph ,v0 ,v1))
+     (add-edge graph ,v0 ,v1)
+     (unwind-protect
+          (progn ,@body)
+       (remove-edge graph ,v0 ,v1))))
+     
 (defun get-greedy-computer-edge (graph)
   "Use a greedy algorithm to pick the best edge available."
   (declare (ignorable graph))
-  (let* ((best-so-far (cons 0 nil))
+  (let* ((best-so-far (cons -999 nil))
          (squares (find-complete-squares graph))
          (len-squares (length squares)))
     (loop for vert below (length (graph-edges graph))
        for current-options = (get-possibilities graph vert) then (get-possibilities graph vert)
        do
          (dolist (v2 current-options)
-           (add-edge graph vert v2)
-           (let ((diff (- (length (find-complete-squares graph)) len-squares)))
-             (if (> diff (car best-so-far))
-                 (setf best-so-far (cons diff (cons vert v2)))))
-           (remove-edge graph vert v2)))
+           (with-edge (graph vert v2)
+             (let ((diff (- (length (find-complete-squares graph)) len-squares)))
+               (when (> diff (car best-so-far))
+                 (setf best-so-far (cons diff (cons vert v2))))))))
     (if (cdr best-so-far)
         (values (cadr best-so-far) (cddr best-so-far))
-        (get-random-computer-edge graph))))
+        (if (> (length (graph-edges graph)) (length squares))
+            (values nil nil)
+            (get-random-computer-edge graph)))))
+
+
+
+(defun get-maximin-computer-edge (graph)
+  "Find the edge that offers the most points, or the one that minimizes the player's score."
+  (declare (ignorable graph))
+  (let* ((best-so-far (list -99999))
+         (players-worst (list 9999))
+         (no-change (list 0))
+         (squares (find-complete-squares graph))
+         (len-squares (length squares))
+         (max-squares (+ 1 (length (graph-edges graph)))))
+    (loop for vert below (length (graph-edges graph))
+       for current-options = (get-possibilities graph vert) then (get-possibilities graph vert)
+       do
+         (dolist (v2 current-options)
+           (with-edge (graph vert v2)
+             (let* ((len-new (length (find-complete-squares graph)))
+                    (diff (- len-new len-squares)))
+               (when (> diff (car best-so-far))
+                 (setf best-so-far (cons diff (cons vert v2))))
+               (when (= diff 0)
+                 (multiple-value-bind (player-v1 player-v2) (get-greedy-computer-edge graph)
+                   (with-edge (graph player-v1 player-v2)
+                     (let* ((len-player (length (find-complete-squares graph)))
+                            (player-diff (- len-player len-new)))
+                       (when (< player-diff (car players-worst))
+                         (setf players-worst (cons player-diff (cons vert v2))))))))))))
+    (cond ((and (cdr best-so-far) (> (car best-so-far) 0))
+           (values (cadr best-so-far) (cddr best-so-far)))
+          ((cdr players-worst)
+           (values (cadr players-worst) (cddr players-worst)))
+          (t
+           (get-random-computer-edge graph)))))
 
 (defstruct player
   "A player object containing a score, a function for getting an edge, a name, and a function to determine the next player."
@@ -167,7 +209,7 @@
   (squares nil :type list)
   (owners nil :type list)
   (human-player (make-player :color :green :score 0))
-  (computer-player (make-player :color :red :score 0 :edge-function #'get-greedy-computer-edge))
+  (computer-player (make-player :color :red :score 0 :edge-function #'get-maximin-computer-edge))
   (graph (create-dab-graph 2) :type graph) 
   (current-player :human))
 
@@ -181,7 +223,7 @@
   (make-dab :game-size size
             :graph (create-dab-graph size)
             :human-player (make-player :score 0 :color (q+:qt.green) :edge-function nil)
-            :computer-player (make-player :score 0 :color (q+:qt.red) :edge-function #'get-greedy-computer-edge)))
+            :computer-player (make-player :score 0 :color (q+:qt.red) :edge-function #'get-maximin-computer-edge)))
 
 
 ;; And now the GUI...
@@ -328,7 +370,7 @@
                                  (+ step-size (* step-size (point-y-loc pt2))))))))
 
         ;; Draw player's potential next move
-        (when two-closest
+        (when (and two-closest (not (has-edge-p graph (cdar two-closest) (cdadr two-closest))))
           (let ((pt1 (aref points (cdar two-closest)))
                 (pt2 (aref points (cdadr two-closest))))
             (q+:set-pen painter red-pen)
