@@ -8,7 +8,9 @@
   :license "ISC"
   :depends-on (#:qtools
                #:qtgui
-               #:qtcore)
+               #:qtcore
+               #:mixalot
+               #:trivial-main-thread)
   :serial t
   :components ((:file "package")
                (:file "dab")))

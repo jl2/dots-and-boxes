@@ -8,6 +8,28 @@
 
 (declaim (optimize (speed 0) (safety 3) (size 0) (debug 3)))
 
+(defclass click-streamer ()
+  ((freq  :initform 440.0d0 :initarg :freq)
+   (phase :initform 0.0d0))
+  (:documentation "Streamer object for generating sounds."))
+
+(defun sound-function (phase)
+  "Generate a sound wave."
+  (loop for val from 1 to 2 summing (+ (sin (/ phase val)) (sin (* phase val)))))
+
+(defmethod mixalot:streamer-mix-into ((streamer click-streamer) mixer buffer offset length time)
+  "Streamer callback that plays a sound into the mixer."
+  (declare (ignore time))
+  (with-slots (n freq phase playing) streamer
+    (loop for index upfrom offset
+       repeat length
+       with dp = (* 2.0 pi freq 1/44100)
+       as sample = (round (* 1500 (sound-function phase)))
+       do
+         (mixalot:stereo-mixf (aref buffer index) (mixalot:mono->stereo sample))
+         (incf phase dp)))
+  (mixalot:mixer-remove-streamer mixer streamer))
+
 (defstruct point
   "A two dimensional point object."
   (x-loc 0 :type fixnum)
@@ -148,19 +170,25 @@
 ;; And now the GUI...
 
 (define-widget main-window (QMainWindow)
-  ((next-game-size :initform 4 :type fixnum))
+  ((next-game-size :initform 4 :type fixnum)
+   (mixer    :initform (mixalot:create-mixer)))
   (:documentation "A Window containing a dots and boxes widget."))
 
 (define-widget dab-game-widget (QWidget)
   ((dab-game :initform (create-gui-dab 4))
-   (two-closest :initform nil))
+   (two-closest :initform nil)
+   (mixer :initform nil)
+   (click-streamer :initform (make-instance 'click-streamer :freq 1200))
+   (box-streamer :initform (make-instance 'click-streamer :freq 1000))
+   (win-streamer :initform (make-instance 'click-streamer :freq 1400))
+   (lose-streamer :initform (make-instance 'click-streamer :freq 400)))
   (:documentation "A widget that playes a plays a game of Dots and Boxes."))
 
 (define-initializer (dab-game-widget setup)
   "Turn on mouse tracking."
   (setf (q+:mouse-tracking dab-game-widget) t))
 
-(defun handle-new-edge (dab v1 v2)
+(defun handle-new-edge (dab v1 v2 mixer box-sound click-sound)
   "Add a new edge to the game graph, add any new squares to the list of them, increment score, and check for game over."
   (with-slots (graph squares owners current-player human-player computer-player) dab
     (add-edge graph v1 v2)
@@ -169,11 +197,14 @@
            (old-len (length squares))
            (color (player-color (if (eq current-player :human) human-player computer-player))))
       (if (> new-len old-len)
-          (progn 
+          (progn
+            (mixalot:mixer-add-streamer mixer box-sound)
             (dolist (square (set-difference new-squares squares))
               (push (cons square color) owners))
             (incf (player-score (if (eq current-player :human) human-player computer-player)) (- new-len old-len)))
-          (setf current-player (if (eq :computer current-player) :human :computer)))
+          (progn
+            (mixalot:mixer-add-streamer mixer click-sound)
+            (setf current-player (if (eq :computer current-player) :human :computer))))
       (setf squares new-squares)
       (if (game-over-p dab)
           :game-over
@@ -191,7 +222,7 @@
   (declare (connected dab-game-widget (computer-turn)))
   (with-slots (computer-player graph squares) dab-game
     (multiple-value-bind (v1 v2) (funcall (player-edge-function computer-player) graph)
-      (let ((result (handle-new-edge dab-game v1 v2)))
+      (let ((result (handle-new-edge dab-game v1 v2 mixer box-streamer click-streamer)))
         (q+:repaint dab-game-widget)
         (cond ((eq result :game-over) (signal! dab-game-widget (game-over)))
               ((eq result :computer) (signal! dab-game-widget (computer-turn))))))))
@@ -200,11 +231,21 @@
   "Handle the end of the game."
   (declare (connected dab-game-widget (game-over)))
   (with-slots (computer-player human-player) dab-game
-    (let ((message (if (= (player-score human-player) (player-score computer-player))
-                       "It was a tie! Try again!"
-                       (if (> (player-score human-player) (player-score computer-player))
-                           (format nil "You won, ~a to ~a!" (player-score human-player) (player-score computer-player))
-                           (format nil "You've lost! ~a to ~a!" (player-score human-player) (player-score computer-player))))))
+    (let* ((player-score (player-score human-player))
+           (computer-score (player-score computer-player))
+           (tie (= player-score computer-score))
+           (human-won (> player-score computer-score))
+           (message (if tie
+                        "It was a tie! Try again!"
+                        (if human-won
+                            (format nil "You won, ~a to ~a!" player-score computer-score)
+                            (format nil "You've lost! ~a to ~a!" player-score computer-score))))
+           (sound (if tie
+                      win-streamer
+                      (if human-won
+                          win-streamer
+                          lose-streamer))))
+      (mixalot:mixer-add-streamer mixer sound)
       (q+:qmessagebox-information dab-game-widget "Game Over!" message))))
 
 (define-override (dab-game-widget paint-event paint) (ev)
@@ -326,7 +367,7 @@
              (v2 (cdadr closest)))
         (when (not (has-edge-p graph v1 v2))
           (setf two-closest nil)
-          (let ((result (handle-new-edge dab-game v1 v2)))
+          (let ((result (handle-new-edge dab-game v1 v2 mixer click-streamer box-streamer)))
             (cond ((eq result :game-over) (signal! dab-game-widget (game-over)))
                   ((eq result :computer) (signal! dab-game-widget (computer-turn)))))
           (q+:repaint dab-game-widget))))))
@@ -355,31 +396,33 @@
 
 (define-override (main-window close-event) (ev)
   "Handle close events."
+  (mixalot:mixer-remove-all-streamers mixer)
+  (mixalot:destroy-mixer mixer)
   (q+:accept ev))
 
 (define-menu (main-window Game)
-  (:item ("New Game" (ctrl alt n))
+  (:item ("New Game" (ctrl n))
          (signal! dab-widget (new-game int) next-game-size)
          (q+:repaint main-window))
   (:separator)
-  (:item ("Quit" (ctrl alt q))
+  (:item ("Quit" (ctrl q))
          (q+:close main-window)))
 
 ;; This is lame, I need to learn how to use check boxes in menus...
 (define-menu (main-window Size)
-  (:item "Two"
+  (:item ("Two" (ctrl 2))
          (setf next-game-size 2))
-  (:item "Three"
+  (:item ("Three" (ctrl 3))
          (setf next-game-size 3))
-  (:item "Four"
+  (:item ("Four" (ctrl 4))
          (setf next-game-size 4))
-  (:item "Five"
+  (:item ("Five" (ctrl 5))
          (setf next-game-size 5))
-  (:item "Six"
+  (:item ("Six" (ctrl 6))
          (setf next-game-size 6))
-  (:item "Seven"
+  (:item ("Seven" (ctrl 7))
          (setf next-game-size 7))
-  (:item "Eight"
+  (:item ("Eight" (ctrl 8))
          (setf next-game-size 8)))
 
 (define-menu (main-window Help)
@@ -394,8 +437,10 @@
   "Set the window title and set the dab-widget to be the central widget."
   (setf (q+:window-title main-window) "Dots And Boxes")
   (setf (q+:mouse-tracking main-window) t)
+  (setf (slot-value dab-widget 'mixer) mixer)
   (setf (q+:central-widget main-window) dab-widget))
 
 (defun main ()
   "Create the main window."
+  (trivial-main-thread:call-in-main-thread #'mixalot:main-thread-init)
   (with-main-window (window (make-instance 'main-window))))
