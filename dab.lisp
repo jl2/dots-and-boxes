@@ -129,14 +129,31 @@
         (when (< i gt) (format stream "~a - ~a~%" i gt))))))
 
 (defun get-random-computer-edge (graph)
-  "Figure out a computer move."
+  "Pick a random edge."
   (declare (ignorable graph))
   (loop for vert = (random (length (graph-edges graph))) then (random (length (graph-edges graph)))
      for possibilities = (get-possibilities graph vert)
      while (not possibilities)
      finally (return-from get-random-computer-edge (values vert (nth (random (length possibilities)) possibilities)))))
 
-
+(defun get-greedy-computer-edge (graph)
+  "Use a greedy algorithm to pick the best edge available."
+  (declare (ignorable graph))
+  (let* ((best-so-far (cons 0 nil))
+         (squares (find-complete-squares graph))
+         (len-squares (length squares)))
+    (loop for vert below (length (graph-edges graph))
+       for current-options = (get-possibilities graph vert) then (get-possibilities graph vert)
+       do
+         (dolist (v2 current-options)
+           (add-edge graph vert v2)
+           (let ((diff (- (length (find-complete-squares graph)) len-squares)))
+             (if (> diff (car best-so-far))
+                 (setf best-so-far (cons diff (cons vert v2)))))
+           (remove-edge graph vert v2)))
+    (if (cdr best-so-far)
+        (values (cadr best-so-far) (cddr best-so-far))
+        (get-random-computer-edge graph))))
 
 (defstruct player
   "A player object containing a score, a function for getting an edge, a name, and a function to determine the next player."
@@ -150,21 +167,21 @@
   (squares nil :type list)
   (owners nil :type list)
   (human-player (make-player :color :green :score 0))
-  (computer-player (make-player :color :red :score 0 :edge-function #'get-random-computer-edge))
+  (computer-player (make-player :color :red :score 0 :edge-function #'get-greedy-computer-edge))
   (graph (create-dab-graph 2) :type graph) 
   (current-player :human))
 
 (defun game-over-p (dab)
   "Check if the game is over yet."
   (with-slots (squares game-size) dab
-      (= (length squares) (* game-size game-size))))
+    (= (length squares) (* game-size game-size))))
 
 (defun create-gui-dab (size)
   "Create a computer vs human  Dots and Boxes game for a GUI (edge functions stubbed out)."
   (make-dab :game-size size
             :graph (create-dab-graph size)
             :human-player (make-player :score 0 :color (q+:qt.green) :edge-function nil)
-            :computer-player (make-player :score 0 :color (q+:qt.red) :edge-function #'get-random-computer-edge)))
+            :computer-player (make-player :score 0 :color (q+:qt.red) :edge-function #'get-greedy-computer-edge)))
 
 
 ;; And now the GUI...
