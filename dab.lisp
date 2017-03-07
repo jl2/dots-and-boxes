@@ -136,13 +136,14 @@
      while (not possibilities)
      finally (return-from get-random-computer-edge (values vert (nth (random (length possibilities)) possibilities)))))
 
-(defmacro with-edge ((graph v0 v1) &body body)
+(defmacro with-new-edge ((graph v0 v1) &body body)
+  "If an edge is not in graph then add it, execute body, and remove it.  Do nothing if the edge is already in the graph."
   `(when (not (has-edge-p ,graph ,v0 ,v1))
      (add-edge graph ,v0 ,v1)
      (unwind-protect
           (progn ,@body)
        (remove-edge graph ,v0 ,v1))))
-     
+
 (defun get-greedy-computer-edge (graph)
   "Use a greedy algorithm to pick the best edge available."
   (declare (ignorable graph))
@@ -153,7 +154,7 @@
        for current-options = (get-possibilities graph vert) then (get-possibilities graph vert)
        do
          (dolist (v2 current-options)
-           (with-edge (graph vert v2)
+           (with-new-edge (graph vert v2)
              (let ((diff (- (length (find-complete-squares graph)) len-squares)))
                (when (> diff (car best-so-far))
                  (setf best-so-far (cons diff (cons vert v2))))))))
@@ -178,14 +179,14 @@
        for current-options = (get-possibilities graph vert) then (get-possibilities graph vert)
        do
          (dolist (v2 current-options)
-           (with-edge (graph vert v2)
+           (with-new-edge (graph vert v2)
              (let* ((len-new (length (find-complete-squares graph)))
                     (diff (- len-new len-squares)))
                (when (> diff (car best-so-far))
                  (setf best-so-far (cons diff (cons vert v2))))
                (when (= diff 0)
                  (multiple-value-bind (player-v1 player-v2) (get-greedy-computer-edge graph)
-                   (with-edge (graph player-v1 player-v2)
+                   (with-new-edge (graph player-v1 player-v2)
                      (let* ((len-player (length (find-complete-squares graph)))
                             (player-diff (- len-player len-new)))
                        (when (< player-diff (car players-worst))
